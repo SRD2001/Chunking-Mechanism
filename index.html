@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chunked File Uploader</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .progress-container {
+            margin-top: 10px;
+            width: 100%;
+            background-color: #f3f3f3;
+            border: 1px solid #ddd;
+        }
+        .progress-bar {
+            width: 0;
+            height: 24px;
+            background-color: #4caf50;
+            text-align: center;
+            line-height: 24px;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <h2>Chunked File Uploader</h2>
+    <input type="file" id="fileInput">
+    <button onclick="startUpload()">Upload</button>
+    <div class="progress-container">
+        <div class="progress-bar" id="progressBar">0%</div>
+    </div>
+    <p id="status"></p>
+
+    <script>
+        const CHUNK_SIZE = 5 * 1024 * 1024; // 5 MB
+
+        function startUpload() {
+            const fileInput = document.getElementById('fileInput');
+            const file = fileInput.files[0];
+            if (!file) {
+                alert('Please select a file to upload.');
+                return;
+            }
+
+            uploadFileInChunks(file);
+        }
+
+        function uploadFileInChunks(file) {
+            const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+            let currentChunkIndex = 0;
+            const progressBar = document.getElementById('progressBar');
+            const status = document.getElementById('status');
+
+            function uploadNextChunk() {
+                const start = currentChunkIndex * CHUNK_SIZE;
+                const end = Math.min(start + CHUNK_SIZE, file.size);
+                const chunk = file.slice(start, end);
+
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', 'http://127.0.0.1:5000/upload', true);
+                xhr.setRequestHeader('Chunk-Index', currentChunkIndex);
+                xhr.setRequestHeader('Original-Filename', file.name);
+                xhr.setRequestHeader('Content-Disposition', `attachment; filename="${file.name}"`);
+
+                xhr.onload = function () {
+                    if (xhr.status === 200) {
+                        currentChunkIndex++;
+                        const progress = Math.floor((currentChunkIndex / totalChunks) * 100);
+                        progressBar.style.width = progress + '%';
+                        progressBar.textContent = progress + '%';
+                        status.textContent = `Uploaded ${currentChunkIndex} of ${totalChunks} chunks`;
+
+                        if (currentChunkIndex < totalChunks) {
+                            uploadNextChunk();
+                        } else {
+                            finalizeUpload(file.name);
+                        }
+                    } else {
+                        status.textContent = `Error uploading chunk ${currentChunkIndex}. Server responded with: ${xhr.statusText}`;
+                    }
+                };
+
+                xhr.onerror = function () {
+                    status.textContent = `Network error while uploading chunk ${currentChunkIndex}.`;
+                };
+
+                xhr.send(chunk);
+            }
+
+            function finalizeUpload(filename) {
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', 'http://127.0.0.1:5000/finalize', true);
+                xhr.setRequestHeader('Original-Filename', filename);
+
+                xhr.onload = function () {
+                    if (xhr.status === 200) {
+                        status.textContent = 'File upload completed successfully!';
+                    } else {
+                        status.textContent = `Error finalizing upload. Server responded with: ${xhr.statusText}`;
+                    }
+                };
+
+                xhr.onerror = function () {
+                    status.textContent = 'Network error duringg finalization.';
+                };
+
+                xhr.send();
+            }
+
+            uploadNextChunk();
+        }
+    </script>
+</body>
+</html>
